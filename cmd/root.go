@@ -19,34 +19,37 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/viper"
 )
 
 var cfgFile string
 
+type Config struct {
+	Token string
+}
+
+var config Config
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "anony-cli",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Use:   "anony",
+	Short: "anony is tool to create anonymous URL",
+	Long: `Anony-CLI is a CLI library in order to create anonymous URL.
+This application create random URL from Original URL.
+So you can hide or shorten Original URL.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	//	Run: func(cmd *cobra.Command, args []string) { },
+
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
 		os.Exit(1)
 	}
 }
@@ -58,11 +61,11 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.anony-cli.yaml)")
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.anony/config.yaml)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.SilenceUsage = true
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -77,16 +80,36 @@ func initConfig() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
+		configPath := home + "/.anony"
+		viper.AddConfigPath(configPath)
+		viper.SetConfigName("config")
 
-		// Search config in home directory with name ".anony-cli" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".anony-cli")
+		// TODO(Tatsuemon): ~/.anony/config.yamlの作成と追記
+		if f, err := os.Stat(configPath); os.IsNotExist(err) || !f.IsDir() {
+			if err := os.MkdirAll(configPath, 0777); err != nil {
+				fmt.Println(err)
+			}
+		}
+
+		file, err := os.OpenFile(configPath+"/config.yaml", os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			fmt.Println(err)
+		}
+		defer file.Close()
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+		// fmt.Println("Using config file:", viper.ConfigFileUsed())
+		fmt.Println()
 	}
+
+	if err := viper.Unmarshal(&config); err != nil {
+		fmt.Println(err)
+	}
+
+	// fmt.Println(viper.ConfigFileUsed())
+	// fmt.Println(config)
 }
