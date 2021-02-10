@@ -18,15 +18,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"log"
 
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"gopkg.in/yaml.v2"
 )
 
 func init() {
@@ -45,8 +45,17 @@ func newCreateAnonyURLCmd() *cobra.Command {
 		Short: "Create Anony URL",
 		Long:  "Create Anony URL from original URL.\nif you do not set 'in_active' flag, this URL is open.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !lib.ExistDB(lib.GetDBPath()) {
+				return fmt.Errorf("failed to login, please initialize anony")
+			}
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
 			opts.Original = args[0]
-			if err := createAnonyURL(cmd, opts); err != nil {
+			if err := createAnonyURL(cmd, opts, db); err != nil {
 				fmt.Println()
 				return errors.Wrap(err, "failed to execute a command 'create'\n")
 			}
@@ -58,7 +67,7 @@ func newCreateAnonyURLCmd() *cobra.Command {
 	return cmd
 }
 
-func createAnonyURL(cmd *cobra.Command, opts *createAnonyURLOpts) error {
+func createAnonyURL(cmd *cobra.Command, opts *createAnonyURLOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -76,17 +85,12 @@ func createAnonyURL(cmd *cobra.Command, opts *createAnonyURLOpts) error {
 		IsActive:    !opts.InActive,
 	}
 
-	// ~/.anony/config.yamlからJWTの取得
-	buf, err := ioutil.ReadFile(viper.ConfigFileUsed())
+	// Tokenのセット
+	token, err := lib.GetToken(db, false)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	m := make(map[string]interface{})
-	err = yaml.Unmarshal([]byte(buf), &m)
-	if err != nil {
-		fmt.Println(err)
-	}
-	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", m["Token"].(string)))
+	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", token))
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	// API call
