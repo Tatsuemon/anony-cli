@@ -96,9 +96,6 @@ func open(cmd *cobra.Command, opts *openOpts, db *sqlx.DB) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to cli.UpdateAnonyURLStatus\n")
 	}
-
-	// TODO(Tatsuemon): 出力の調整
-	fmt.Println(res)
-
+	fmt.Printf("You can Access: %v\n", res.AnonyUrl.ShortUrl)
 	return nil
 }
