@@ -8,8 +8,8 @@ import (
 
 // GetDBPath get db path
 func GetDBPath() string {
-	p, _ := os.Executable()
-	return p + "/data.db"
+	p := os.Getenv("HOME")
+	return p + "/.anony/data.db"
 }
 
 // ExistDB gets whether there is db or not
