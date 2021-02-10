@@ -19,38 +19,42 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh/terminal"
 	"google.golang.org/grpc"
 )
 
 func init() {
-	rootCmd.AddCommand(newRegisterCmd())
+	rootCmd.AddCommand(newInitCmd())
 }
 
-type registerOpts struct {
+type initOpts struct {
 	Name            string
 	Email           string
 	Password        string
 	ConfirmPassword string
 }
 
-func newRegisterCmd() *cobra.Command {
+func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "register",
-		Short: "Sign up",
+		Use:   "init",
+		Short: "Initialize user information",
 		Long:  `Create user account & log in Anony in order to use Annony CLI commands`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s := bufio.NewScanner(os.Stdin)
 			var name, email, password, confirmPassword string
-			fmt.Println("\nHello!!!\nWelcome to Anony!!\n\n\nYou need to input your nickname and email.")
+			fmt.Println("Hello!!!\nWelcome to Anony!!\n\nYou need to input your nickname and email.")
 			fmt.Print("[Account Name]: ")
 			s.Scan()
 			name = s.Text()
@@ -97,16 +101,23 @@ func newRegisterCmd() *cobra.Command {
 					break
 				}
 			}
-			opts := &registerOpts{
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+
+			opts := &initOpts{
 				Name:            name,
 				Email:           email,
 				Password:        password,
 				ConfirmPassword: confirmPassword,
 			}
-			err := registerUser(cmd, opts)
+			err = initUser(cmd, opts, db)
 			if err != nil {
 				fmt.Println()
-				return errors.Wrap(err, "failed to execute a command 'register'\n")
+				return errors.Wrap(err, "failed to execute a command 'init'\n")
 			}
 
 			return nil
@@ -115,7 +126,7 @@ func newRegisterCmd() *cobra.Command {
 	return cmd
 }
 
-func registerUser(cmd *cobra.Command, opts *registerOpts) error {
+func initUser(cmd *cobra.Command, opts *initOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -143,17 +154,15 @@ func registerUser(cmd *cobra.Command, opts *registerOpts) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to cli.CreateUser\n")
 	}
-
-	fmt.Printf("\n\nHi %s!! You've successfully registerd.\n", res.GetUser().GetName())
-	fmt.Println("Welcome to Anonny!!")
-
-	// Tokenの設定
-	file, err := os.OpenFile(viper.ConfigFileUsed(), os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
-	if err != nil {
-		fmt.Println(err)
+	// DBの作成
+	if err = lib.CreateDBTable(db); err != nil {
+		return err
 	}
-	defer file.Close()
-	fmt.Fprintf(file, "Token: \"%s\"\n", res.GetToken())
+	// Tokenのセット
+	if err = lib.InsertToken(db, res.GetToken(), false); err != nil {
+		return err
+	}
 
+	fmt.Printf("\nHi %s!! You've successfully registered user.\n", res.GetUser().GetName())
 	return nil
 }

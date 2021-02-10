@@ -18,17 +18,17 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"log"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"gopkg.in/yaml.v2"
 )
 
 func init() {
@@ -44,7 +44,16 @@ func newInfoCmd() *cobra.Command {
 		Short: "Show your info",
 		Long:  "Show your infomation",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := info(cmd, opts); err != nil {
+			if !lib.ExistDB(lib.GetDBPath()) {
+				return fmt.Errorf("failed to login, please initialize anony")
+			}
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+			if err := info(cmd, opts, db); err != nil {
 				fmt.Println()
 				return errors.Wrap(err, "failed to execute a command 'info'\n")
 			}
@@ -54,7 +63,7 @@ func newInfoCmd() *cobra.Command {
 	return cmd
 }
 
-func info(cmd *cobra.Command, opts *infoLOpts) error {
+func info(cmd *cobra.Command, opts *infoLOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -69,17 +78,12 @@ func info(cmd *cobra.Command, opts *infoLOpts) error {
 	cli := rpc.NewAnonyServiceClient(conn)
 	req := &emptypb.Empty{}
 
-	// ~/.anony/config.yamlからJWTの取得
-	buf, err := ioutil.ReadFile(viper.ConfigFileUsed())
+	// Tokenのセット
+	token, err := lib.GetToken(db, false)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	m := make(map[string]interface{})
-	err = yaml.Unmarshal([]byte(buf), &m)
-	if err != nil {
-		fmt.Println(err)
-	}
-	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", m["Token"].(string)))
+	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", token))
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	// API call

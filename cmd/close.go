@@ -18,15 +18,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"log"
 
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"gopkg.in/yaml.v2"
 )
 
 func init() {
@@ -44,8 +44,17 @@ func newCloseCmd() *cobra.Command {
 		Short: "Deactivate your Anony URL",
 		Long:  "Deactivate your Anony URL.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !lib.ExistDB(lib.GetDBPath()) {
+				return fmt.Errorf("failed to login, please initialize anony")
+			}
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
 			opts.Original = args[0]
-			if err := close(cmd, opts); err != nil {
+			if err := close(cmd, opts, db); err != nil {
 				fmt.Println()
 				return errors.Wrap(err, "failed to execute a command 'close'\n")
 			}
@@ -56,7 +65,7 @@ func newCloseCmd() *cobra.Command {
 	return cmd
 }
 
-func close(cmd *cobra.Command, opts *closeOpts) error {
+func close(cmd *cobra.Command, opts *closeOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -74,17 +83,12 @@ func close(cmd *cobra.Command, opts *closeOpts) error {
 		IsActive:    false,
 	}
 
-	// ~/.anony/config.yamlからJWTの取得
-	buf, err := ioutil.ReadFile(viper.ConfigFileUsed())
+	// Tokenのセット
+	token, err := lib.GetToken(db, false)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	m := make(map[string]interface{})
-	err = yaml.Unmarshal([]byte(buf), &m)
-	if err != nil {
-		fmt.Println(err)
-	}
-	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", m["Token"].(string)))
+	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", token))
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	// API call

@@ -18,15 +18,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"log"
 
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-	"gopkg.in/yaml.v2"
 )
 
 func init() {
@@ -45,7 +45,16 @@ func newListAnonyURLsCmd() *cobra.Command {
 		Short: "List your Anony URLs",
 		Long:  "List your Anony URLs.\n By default, get Active Anony URLs.\nif you want to get in-active URLs, set 'inactive' flag.\nand if you want to get active and in-active URLs, set 'all' flag.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := listAnonyURLs(cmd, opts); err != nil {
+			if !lib.ExistDB(lib.GetDBPath()) {
+				return fmt.Errorf("failed to login, please initialize anony")
+			}
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
+			if err := listAnonyURLs(cmd, opts, db); err != nil {
 				fmt.Println()
 				return errors.Wrap(err, "failed to execute a command 'ls'\n")
 			}
@@ -57,7 +66,7 @@ func newListAnonyURLsCmd() *cobra.Command {
 	return cmd
 }
 
-func listAnonyURLs(cmd *cobra.Command, opts *listAnonyURLsOpts) error {
+func listAnonyURLs(cmd *cobra.Command, opts *listAnonyURLsOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -75,17 +84,12 @@ func listAnonyURLs(cmd *cobra.Command, opts *listAnonyURLsOpts) error {
 		All:      opts.All,
 	}
 
-	// ~/.anony/config.yamlからJWTの取得
-	buf, err := ioutil.ReadFile(viper.ConfigFileUsed())
+	// Tokenのセット
+	token, err := lib.GetToken(db, false)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	m := make(map[string]interface{})
-	err = yaml.Unmarshal([]byte(buf), &m)
-	if err != nil {
-		fmt.Println(err)
-	}
-	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", m["Token"].(string)))
+	md := metadata.Pairs("Authorization", fmt.Sprintf("bearer %s", token))
 	ctx := metadata.NewOutgoingContext(context.Background(), md)
 
 	// API call

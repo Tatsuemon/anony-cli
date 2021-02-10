@@ -19,13 +19,15 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 
+	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
+	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh/terminal"
 	"google.golang.org/grpc"
 )
@@ -45,7 +47,15 @@ func newLogInCmd() *cobra.Command {
 		Short: "Log in",
 		Long:  `Log in to Anony service in order to use Anony CLI commands.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// fmt.Println(config)
+			if !lib.ExistDB(lib.GetDBPath()) {
+				return fmt.Errorf("failed to login, please initialize anony")
+			}
+			// DB Conn
+			db, err := sqlx.Open("sqlite3", lib.GetDBPath())
+			if err != nil {
+				log.Fatal(err)
+			}
+			defer db.Close()
 			s := bufio.NewScanner(os.Stdin)
 			var nameOrEmail, password string
 			fmt.Print("[Account Name or Email]: ")
@@ -62,7 +72,7 @@ func newLogInCmd() *cobra.Command {
 				NameOrEmail: nameOrEmail,
 				Password:    password,
 			}
-			if err := logInUser(cmd, opts); err != nil {
+			if err := logInUser(cmd, opts, db); err != nil {
 				fmt.Println()
 				return errors.Wrap(err, "failed to execute a command 'login'\n")
 			}
@@ -72,7 +82,7 @@ func newLogInCmd() *cobra.Command {
 	return cmd
 }
 
-func logInUser(cmd *cobra.Command, opts *logInOpts) error {
+func logInUser(cmd *cobra.Command, opts *logInOpts, db *sqlx.DB) error {
 	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
 
 	if err != nil {
@@ -96,16 +106,14 @@ func logInUser(cmd *cobra.Command, opts *logInOpts) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to cli.LogInUser\n")
 	}
+
+	// Tokenのセット
+	if err = lib.InsertToken(db, res.GetToken(), false); err != nil {
+		return err
+	}
+
 	fmt.Printf("\n\nHi %s!! You've successfully authenticated.\n", res.GetUser().GetName())
 	fmt.Println("Welcome to Anonny!!")
-
-	// Tokenの設定
-	file, err := os.OpenFile(viper.ConfigFileUsed(), os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer file.Close()
-	fmt.Fprintf(file, "Token: \"%s\"\n", res.GetToken())
 
 	return nil
 }
