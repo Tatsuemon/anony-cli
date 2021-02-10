@@ -92,8 +92,8 @@ func info(cmd *cobra.Command, opts *infoLOpts, db *sqlx.DB) error {
 		return errors.Wrap(err, "failed to cli.CountAnonyURLs\n")
 	}
 
-	// TODO(Tatsuemon): 出力の調整
-	fmt.Println(res)
-
+	fmt.Printf("Name: %s\n", res.Name)
+	fmt.Printf("Email: %s\n", res.Email)
+	fmt.Printf("URLs(Active): %v(%v)\n", res.CountAll, res.CountActive)
 	return nil
 }
