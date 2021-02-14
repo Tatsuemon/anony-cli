@@ -99,8 +99,11 @@ func createAnonyURL(cmd *cobra.Command, opts *createAnonyURLOpts, db *sqlx.DB) e
 		return errors.Wrap(err, "failed to cli.CreateAnonyURL\n")
 	}
 
-	// TODO(Tatsuemon): 出力の調整
-	fmt.Println(res)
-
+	fmt.Printf("You've Successfully created AnonyURL from %v\n", res.AnonyUrls.OriginalUrl)
+	if !opts.InActive {
+		fmt.Printf("You can Access: %v\n", res.AnonyUrls.ShortUrl)
+	} else {
+		fmt.Printf("You can not Access: %v\n", res.AnonyUrls.ShortUrl)
+	}
 	return nil
 }

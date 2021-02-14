@@ -16,13 +16,18 @@ limitations under the License.
 package cmd
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"strconv"
 
 	"github.com/Tatsuemon/anony-cli/lib"
 	"github.com/Tatsuemon/anony/rpc"
 	"github.com/jmoiron/sqlx"
+	"github.com/olekukonko/tablewriter"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -36,6 +41,7 @@ func init() {
 type listAnonyURLsOpts struct {
 	InActive bool
 	All      bool
+	Select   bool
 }
 
 func newListAnonyURLsCmd() *cobra.Command {
@@ -63,6 +69,7 @@ func newListAnonyURLsCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&opts.InActive, "inactive", "i", false, "get in-active URLs")
 	cmd.Flags().BoolVarP(&opts.All, "all", "a", false, "get active & in-active URLs")
+	cmd.Flags().BoolVarP(&opts.Select, "select", "s", false, "get URLs & select url you wanna open")
 	return cmd
 }
 
@@ -98,8 +105,33 @@ func listAnonyURLs(cmd *cobra.Command, opts *listAnonyURLsOpts, db *sqlx.DB) err
 		return errors.Wrap(err, "failed to cli.ListAnonyURLs\n")
 	}
 
-	// TODO(Tatsuemon): 出力の調整
-	fmt.Println(res)
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"No.", "Original-URL", "Anony-URL", "active"})
 
+	for i, v := range res.AnonyUrls {
+		no := strconv.Itoa(i)
+		active := strconv.FormatBool(v.IsActive)
+		table.Append([]string{no, v.OriginalUrl, v.ShortUrl, active})
+	}
+	table.Render()
+	if opts.Select {
+		s := bufio.NewScanner(os.Stdin)
+		var urlNoStr string
+		fmt.Print("[Select URL No.]: ")
+		s.Scan()
+		urlNoStr = s.Text()
+		urlNo, err := strconv.Atoi(urlNoStr)
+		if err != nil {
+			return err
+		}
+		if urlNo < 0 || urlNo >= len(res.AnonyUrls) {
+			return fmt.Errorf("select No. is out of range")
+		}
+		// For Mac open
+		err = exec.Command("open", res.AnonyUrls[urlNo].ShortUrl).Start()
+		if err != nil {
+			panic(err)
+		}
+	}
 	return nil
 }

@@ -97,8 +97,6 @@ func close(cmd *cobra.Command, opts *closeOpts, db *sqlx.DB) error {
 		return errors.Wrap(err, "failed to cli.UpdateAnonyURLStatus\n")
 	}
 
-	// TODO(Tatsuemon): 出力の調整
-	fmt.Println(res)
-
+	fmt.Printf("You can not Access: %v\n", res.AnonyUrl.ShortUrl)
 	return nil
 }
